@@ -4,17 +4,65 @@ import plotly.express as px
 import os
 from datetime import datetime
 
-# --- 1. CONFIGURATION DE LA PAGE ---
+# --- 1. CONFIGURATION DE LA PAGE & THÈME ---
 st.set_page_config(
-    page_title="EcoCollect Pro - Analyse Descriptive",
+    page_title="EcoCollect Pro - Design Blue & White",
     page_icon="♻️",
     layout="wide"
 )
 
+# Injection de CSS pour le design Bleu Ciel & Blanc
+st.markdown("""
+    <style>
+    /* Couleur de fond principale */
+    .stApp {
+        background-color: #f0f8ff; /* Bleu très pâle (AliceBlue) */
+    }
+    
+    /* Personnalisation de la barre latérale */
+    [data-testid="stSidebar"] {
+        background-color: #87CEEB; /* Sky Blue */
+        color: white;
+    }
+    
+    /* Titres en bleu profond pour le contraste */
+    h1, h2, h3 {
+        color: #1a5276;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    /* Boutons personnalisés */
+    div.stButton > button:first-child {
+        background-color: #00BFFF;
+        color: white;
+        border-radius: 10px;
+        border: none;
+        font-weight: bold;
+        transition: 0.3s;
+    }
+    
+    div.stButton > button:first-child:hover {
+        background-color: #1a5276;
+        color: #87CEEB;
+    }
+    
+    /* Style des cartes de métriques (KPIs) */
+    [data-testid="stMetricValue"] {
+        color: #00BFFF;
+    }
+    
+    /* Bordures des sections */
+    .stExpander {
+        border: 1px solid #87CEEB;
+        background-color: white;
+        border-radius: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # --- 2. PARAMÈTRES MÉTIER ---
 DB_FILE = "database_collecte.csv"
 
-# Coefficients CO2 et leurs justifications
 CO2_DATA = {
     "Métal": {"coeff": 2.5, "desc": "Économise l'extraction minière (Aluminium, Fer)."},
     "Plastique": {"coeff": 1.5, "desc": "Évite la production de polymères issus du pétrole."},
@@ -59,7 +107,7 @@ with st.expander("📖 Guide d'utilisation & Interprétation des indicateurs", e
         ### 🔍 Comprendre les indicateurs
         * **CO2 Économisé (Ligne)** : C'est le bénéfice écologique de chaque pesée ($Poids \\times Coeff$).
         * **Impact Global (Somme)** : C'est le succès total de votre collecte. Plus il est haut, plus vous avez sauvé la planète.
-        * **Efficacité (Qualité)** : C'est votre score de 'Qualité'. Il divise l'Impact par le Poids. 
+        * **Efficacité (Qualité)** : C'est votre score de Qualité. Il divise l'Impact par le Poids. 
             * *Exemple :* Une efficacité de **2.5** signifie que chaque kg ramassé est très précieux (Métal), alors qu'un **0.3** signifie que vous ramassez beaucoup de poids pour peu de gain (Verre).
         """)
         
@@ -71,75 +119,66 @@ with st.expander("📖 Guide d'utilisation & Interprétation des indicateurs", e
         ])
         st.table(df_expl)
 
+
 # --- 5. FORMULAIRE DE COLLECTE (SIDEBAR) ---
 st.sidebar.header("📥 Enregistrement")
 with st.sidebar.form("form_collecte", clear_on_submit=True):
-    agent = st.text_input("Identifiant Agent", placeholder="Votre nom")
+    agent = st.text_input("Identifiant Agent")
     date_saisie = st.date_input("Date", datetime.now())
     secteur = st.selectbox("Provenance", ["Ménager", "Industriel", "Hospitalier", "Commercial", "Autre"])
     type_dechet = st.selectbox("Nature du produit", list(CO2_DATA.keys()))
-    poids = st.number_input("Masse collectée (kg)", min_value=0.1, step=0.5)
+    poids = st.number_input("Masse (kg)", min_value=0.1, step=0.5)
     
-    submit = st.form_submit_button("Valider la saisie")
+    submit = st.form_submit_button("Valider la pesée")
 
 if submit:
     if agent.strip() == "":
         st.sidebar.error("⚠️ Identifiant requis.")
     else:
-        # Calcul métier
         impact_individuel = round(poids * CO2_DATA[type_dechet]["coeff"], 2)
-        
         new_entry = pd.DataFrame({
             "Date": [pd.to_datetime(date_saisie)],
-            "Agent": [agent],
-            "Secteur": [secteur],
-            "Type_Dechet": [type_dechet],
-            "Poids_kg": [poids],
+            "Agent": [agent], "Secteur": [secteur],
+            "Type_Dechet": [type_dechet], "Poids_kg": [poids],
             "CO2_Economise": [impact_individuel]
         })
-        
         data = pd.concat([data, new_entry], ignore_index=True)
         save_data(data)
-        st.sidebar.success(f"Bravo {agent} ! Impact : +{impact_individuel}kg CO2")
+        st.sidebar.success(f"Bravo {agent} !")
         st.rerun()
 
 # --- 6. ANALYSE DESCRIPTIVE ---
 if not data.empty:
     st.markdown("---")
-    # Calcul des KPIs globaux
     total_poids = data['Poids_kg'].sum()
     total_impact = data['CO2_Economise'].sum()
     score_efficacite = total_impact / total_poids if total_poids > 0 else 0
 
     kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("Poids Total", f"{total_poids:.1f} kg", "Masse")
-    kpi2.metric("Impact Global", f"{total_impact:.1f} kg CO₂", "Cumul")
-    kpi3.metric("Efficacité (Qualité)", f"{score_efficacite:.2f}", "Indice")
+    kpi1.metric("Poids Total", f"{total_poids:.1f} kg")
+    kpi2.metric("Impact Global", f"{total_impact:.1f} kg CO₂")
+    kpi3.metric("Efficacité", f"{score_efficacite:.2f}")
 
     st.markdown("---")
     
-    # Graphiques
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(px.sunburst(data, path=['Secteur', 'Type_Dechet'], values='Poids_kg', 
-                                  title="Structure de la Collecte"), use_container_width=True)
+        # Couleur bleu ciel pour les graphiques
+        fig_sun = px.sunburst(data, path=['Secteur', 'Type_Dechet'], values='Poids_kg', 
+                            title="Structure de la Collecte", color_discrete_sequence=px.colors.sequential.Blues)
+        st.plotly_chart(fig_sun, use_container_width=True)
     with c2:
         perf = data.groupby('Agent')['Poids_kg'].sum().reset_index()
-        st.plotly_chart(px.bar(perf, x='Agent', y='Poids_kg', title="Performance par Agent", color_discrete_sequence=['#2ecc71']), use_container_width=True)
+        fig_bar = px.bar(perf, x='Agent', y='Poids_kg', title="Performance par Agent", 
+                         color_discrete_sequence=['#87CEEB'])
+        st.plotly_chart(fig_bar, use_container_width=True)
 
-    with st.expander("📂 Consulter la base de données complète"):
+    with st.expander("📂 Base de données"):
         st.dataframe(data.sort_values(by="Date", ascending=False), use_container_width=True)
-        
-        # Actions de fichier
-        col_ex1, col_ex2 = st.columns(2)
-        with col_ex1:
-            csv = data.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Exporter les données (CSV)", csv, "ecocollect_data.csv", "text/csv")
-        with col_ex2:
-            if st.button("🗑️ Supprimer le dernier enregistrement"):
-                if len(data) > 0:
-                    data = data[:-1]
-                    save_data(data)
-                    st.rerun()
+        if st.button("🗑️ Supprimer le dernier enregistrement"):
+            if len(data) > 0:
+                data = data[:-1]
+                save_data(data)
+                st.rerun()
 else:
-    st.info("👋 Bienvenue. Le système attend votre première collecte pour générer les analyses.")
+    st.info("👋 Système prêt. Enregistrez une collecte pour générer les analyses.")
