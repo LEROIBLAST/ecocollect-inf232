@@ -6,7 +6,7 @@ from datetime import datetime
 
 # --- 1. CONFIGURATION DE LA PAGE ---
 st.set_page_config(
-    page_title="EcoCollect Pro - Gestion & Impact",
+    page_title="EcoCollect Pro - Système Autonome",
     page_icon="♻️",
     layout="wide"
 )
@@ -14,19 +14,18 @@ st.set_page_config(
 # --- 2. PARAMÈTRES TECHNIQUES & MÉTIER ---
 DB_FILE = "database_collecte.csv"
 
-# Facteurs d'impact : kg de CO2 économisé par kg de déchet recyclé
-CO2_FACTORS = {
-    "Plastique": 1.5,
-    "Papier/Carton": 0.9,
-    "Verre": 0.3,
-    "Métal": 2.5,
-    "Organique": 0.5,
-    "Autre": 0.1
+# Coefficients CO2 et leurs justifications (Pour l'aspect pédagogique)
+CO2_DATA = {
+    "Métal": {"coeff": 2.5, "desc": "Économise l'extraction minière très énergivore."},
+    "Plastique": {"coeff": 1.5, "desc": "Évite la transformation du pétrole brut."},
+    "Papier/Carton": {"coeff": 0.9, "desc": "Réduit la déforestation et l'usage d'eau."},
+    "Organique": {"coeff": 0.5, "desc": "Évite le rejet de méthane en décharge."},
+    "Verre": {"coeff": 0.3, "desc": "Recyclable à l'infini mais lourd à transporter."},
+    "Autre": {"coeff": 0.1, "desc": "Impact environnemental minimal estimé."}
 }
 
-# --- 3. FONCTIONS DE GESTION DES DONNÉES (ROBUSTESSE) ---
+# --- 3. GESTION DES DONNÉES (ROBUSTESSE) ---
 def load_data():
-    """Charge les données depuis le CSV ou crée un DataFrame vide structuré."""
     if os.path.exists(DB_FILE):
         try:
             df = pd.read_csv(DB_FILE)
@@ -40,37 +39,53 @@ def create_empty_df():
     return pd.DataFrame(columns=["Date", "Agent", "Secteur", "Type_Dechet", "Poids_kg", "CO2_Economise"])
 
 def save_data(df):
-    """Sauvegarde les données en temps réel dans le fichier CSV."""
     df.to_csv(DB_FILE, index=False)
 
-# Chargement initial des données
 data = load_data()
 
-# --- 4. BARRE LATÉRALE : COLLECTE DES DONNÉES (INPUT) ---
-st.sidebar.header("📥 Formulaire de Collecte")
-st.sidebar.markdown("Saisissez les informations du produit collecté.")
+# --- 4. INTERFACE : GUIDE DE FONCTIONNEMENT ---
+st.title("♻️ EcoCollect Pro : Collecte & Analyse Descriptive")
 
-with st.sidebar.form("form_collecte", clear_on_submit=True):
-    # Identification de l'utilisateur (Agent)
-    agent = st.text_input("Nom de l'Agent / Collecteur", placeholder="Ex: Jean Moussa")
+with st.expander("📖 Mode de fonctionnement & Justification de l'Impact", expanded=True):
+    col_g1, col_g2 = st.columns([1, 1.5])
     
-    # Détails de la collecte
+    with col_g1:
+        st.markdown("""
+        ### Comment utiliser l'application ?
+        1. **Identification** : Saisissez votre nom dans le formulaire à gauche.
+        2. **Saisie** : Renseignez la nature et le poids du produit collecté.
+        3. **Validation** : Cliquez sur 'Enregistrer'. Les données sont stockées instantanément.
+        4. **Analyse** : Observez les graphiques de performance et d'impact en temps réel.
+        """)
+        
+    with col_g2:
+        st.markdown("### Pourquoi le CO2 varie selon le déchet ?")
+        # Création d'un petit tableau explicatif pour le prof
+        df_expl = pd.DataFrame([
+            {"Nature": k, "Coeff (kgCO2/kg)": v["coeff"], "Explication": v["desc"]} 
+            for k, v in CO2_DATA.items()
+        ])
+        st.table(df_expl)
+
+# --- 5. BARRE LATÉRALE : FORMULAIRE (INPUT) ---
+st.sidebar.header("📥 Formulaire de Collecte")
+with st.sidebar.form("form_collecte", clear_on_submit=True):
+    agent = st.text_input("Nom de l'Agent", placeholder="Ex: Jean Moussa")
     date_saisie = st.date_input("Date de l'opération", datetime.now())
     secteur = st.selectbox("Secteur de provenance", ["Ménager", "Industriel", "Hospitalier", "Commercial", "Autre"])
-    type_dechet = st.selectbox("Nature du déchet", list(CO2_FACTORS.keys()))
+    type_dechet = st.selectbox("Nature du déchet", list(CO2_DATA.keys()))
     poids = st.number_input("Poids total (kg)", min_value=0.1, step=0.5)
     
     submit_button = st.form_submit_button("Enregistrer la collecte")
 
-# Logique d'enregistrement après clic
 if submit_button:
     if agent.strip() == "":
-        st.sidebar.error("⚠️ Veuillez entrer un nom d'agent.")
+        st.sidebar.error("⚠️ Le nom de l'agent est obligatoire.")
     else:
-        # Calcul automatique de l'impact
-        co2_val = round(poids * CO2_FACTORS[type_dechet], 2)
+        # Utilisation du coefficient correspondant
+        coeff = CO2_DATA[type_dechet]["coeff"]
+        co2_val = round(poids * coeff, 2)
         
-        # Création de la nouvelle ligne
         new_row = pd.DataFrame({
             "Date": [pd.to_datetime(date_saisie)],
             "Agent": [agent],
@@ -80,77 +95,48 @@ if submit_button:
             "CO2_Economise": [co2_val]
         })
         
-        # Mise à jour et sauvegarde immédiate (Temps Réel)
         data = pd.concat([data, new_row], ignore_index=True)
         save_data(data)
-        st.sidebar.success(f"✅ Enregistré par {agent} ! (+{co2_val}kg CO2)")
+        st.sidebar.success(f"✅ Enregistré ! Impact : +{co2_val}kg CO2")
+        st.rerun()
 
-# --- 5. INTERFACE PRINCIPALE : ANALYSE DESCRIPTIVE (OUTPUT) ---
-st.title("♻️ EcoCollect Pro : Tableau de Bord")
-st.markdown("Analyse descriptive des flux de déchets et de l'impact environnemental.")
-
+# --- 6. ANALYSE DESCRIPTIVE (OUTPUT) ---
 if not data.empty:
-    # --- SECTION FILTRES ---
-    with st.expander("🔍 Filtres de recherche", expanded=False):
-        col_f1, col_f2, col_f3 = st.columns(3)
-        with col_f1:
-            agents_list = st.multiselect("Filtrer par Agent", data["Agent"].unique(), default=data["Agent"].unique())
-        with col_f2:
-            secteurs_list = st.multiselect("Filtrer par Secteur", data["Secteur"].unique(), default=data["Secteur"].unique())
-        with col_f3:
-            types_list = st.multiselect("Filtrer par Nature", data["Type_Dechet"].unique(), default=data["Type_Dechet"].unique())
-
-    # Application des filtres
-    filtered_df = data[
-        (data["Agent"].isin(agents_list)) & 
-        (data["Secteur"].isin(secteurs_list)) & 
-        (data["Type_Dechet"].isin(types_list))
-    ]
-
-    # --- SECTION KPIs (MÉTRIQUES) ---
     st.markdown("---")
+    # KPIs
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Poids Total", f"{filtered_df['Poids_kg'].sum():.1f} kg")
-    m2.metric("CO₂ Économisé", f"{filtered_df['CO2_Economise'].sum():.1f} kg")
-    m3.metric("Nb Collectes", len(filtered_df))
-    m4.metric("Productivité Moyenne", f"{(filtered_df['Poids_kg'].mean() if len(filtered_df)>0 else 0):.1f} kg/saisie")
+    m1.metric("Poids Total", f"{data['Poids_kg'].sum():.1f} kg")
+    m2.metric("Impact Global", f"{data['CO2_Economise'].sum():.1f} kg CO₂")
+    m3.metric("Nb Collectes", len(data))
+    m4.metric("Efficacité", f"{(data['CO2_Economise'].sum()/data['Poids_kg'].sum()):.2f} pts")
 
-    # --- SECTION VISUALISATION ---
-    st.markdown("---")
-    tab1, tab2, tab3 = st.tabs(["📊 Analyses Globales", "👤 Performance Agents", "📑 Données Brutes"])
+    # Visualisations
+    tab1, tab2 = st.tabs(["📊 Répartitions", "📑 Registre des données"])
 
     with tab1:
-        col_chart1, col_chart2 = st.columns(2)
-        with col_chart1:
-            fig_sun = px.sunburst(filtered_df, path=['Secteur', 'Type_Dechet'], values='Poids_kg', title="Répartition Secteur / Nature")
+        c1, c2 = st.columns(2)
+        with c1:
+            fig_sun = px.sunburst(data, path=['Secteur', 'Type_Dechet'], values='Poids_kg', 
+                                  title="Hiérarchie Secteur / Nature")
             st.plotly_chart(fig_sun, use_container_width=True)
-        with col_chart2:
-            df_time = filtered_df.groupby('Date')['Poids_kg'].sum().reset_index()
-            fig_line = px.line(df_time, x='Date', y='Poids_kg', title="Évolution des volumes collectés", markers=True)
-            st.plotly_chart(fig_line, use_container_width=True)
+        with c2:
+            df_agent = data.groupby('Agent')['Poids_kg'].sum().reset_index()
+            fig_bar = px.bar(df_agent, x='Agent', y='Poids_kg', title="Volume par Agent", color='Agent')
+            st.plotly_chart(fig_bar, use_container_width=True)
 
     with tab2:
-        # Analyse par Agent
-        df_agent = filtered_df.groupby('Agent').agg({'Poids_kg': 'sum', 'CO2_Economise': 'sum'}).reset_index()
-        fig_bar = px.bar(df_agent, x='Agent', y='Poids_kg', color='CO2_Economise', 
-                         title="Volume de collecte par Agent (Couleur = Impact CO2)",
-                         text_auto='.1s')
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-    with tab3:
-        st.dataframe(filtered_df.sort_values(by="Date", ascending=False), use_container_width=True)
+        st.dataframe(data.sort_values(by="Date", ascending=False), use_container_width=True)
         
-        # Fonctions de gestion de fichier
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            csv = filtered_df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Télécharger l'extraction CSV", csv, "export_eco_collect.csv", "text/csv")
-        with col_btn2:
+        # Outils de gestion
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            csv = data.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Exporter en CSV", csv, "collecte_eco.csv", "text/csv")
+        with col_d2:
             if st.button("🗑️ Supprimer la dernière entrée"):
                 if len(data) > 0:
                     data = data[:-1]
                     save_data(data)
                     st.rerun()
-
 else:
-    st.info("👋 Bienvenue ! Le système est prêt. Utilisez le formulaire à gauche pour enregistrer votre première collecte.")
+    st.info("👋 Système prêt. Enregistrez une collecte pour activer le tableau de bord.")
